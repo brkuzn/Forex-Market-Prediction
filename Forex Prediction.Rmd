@@ -1,0 +1,125 @@
+
+```{css, echo=FALSE}
+body{
+  background-color: #FAFAFA;
+    font-size: 18px;
+  line-height: 1.8;
+}
+code.r{
+  font-size: 16px;
+}
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In this project, we are interested in predicting the direction in the foreign exchange market in Turkey. To this, we will train a model to classify the movements in the USD/TL exchange rate. The data set covers the period 13/01/2000 - 04/05/2020 and contains 5086 daily observations.
+
+usdret is today’s return in the USD/TL exchange rate and it is defined as the daily percentage change in the USD/TL exchange rate. usddirection is simply the sign of usdret and it has two levels: “Down” if usdret is negative, and “Up” if usdret is positive.
+
+The data set also contains daily percentage returns on the BIST100 stock index, bistret and its lags bistretlag1-bistretlag5.
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)  
+load("finmarkets.RData")
+str(finmarkets)
+head(finmarkets)
+``` 
+
+```{r message=FALSE, warning=FALSE}
+contrasts(finmarkets$usddirection)
+#frequencies
+table(finmarkets$usddirection)/nrow(finmarkets)
+#the market went down about 50% of the time in the whole sample.
+```
+
+
+```{r}
+#Splitting data into train and test set.
+finmarkets.train <- finmarkets %>% dplyr::filter(year<=2016)
+finmarkets.test <- finmarkets %>% dplyr::filter(year>2016)
+```
+Data is prepared. Now we'll fit logistic regression.
+
+```{r}
+#Logistic Regression
+#our predictors are usdretlag1 + usdretlag2 + usdretlag3+usdretlag4 + usdretlag5.
+glm.fit <- glm(usddirection ~ usdretlag1 + usdretlag2 + usdretlag3 + 
+               usdretlag4 + usdretlag5, data=finmarkets.train, 
+               family=binomial)
+summary(glm.fit)
+broom::tidy(glm.fit)
+```
+
+
+```{r}
+#Results from the logistic regression suggests that only the first two lags are statistically significant.(p-value)
+#Marginal Effects
+library(margins)
+ame <- margins::margins(glm.fit)
+summary(ame)
+plot(ame)
+
+```
+
+If there is one percentage point increase in yesterday’s USD/TL returns, today’s probability of going up will increase by 0.025.
+```{r}
+#Confusion Matrix
+library(caret)
+library(e1071)
+glm.probs.test <- predict(glm.fit, finmarkets.test, type = "response") 
+glm.pred.test  <- rep("Down", nrow(finmarkets.test))
+glm.pred.test[glm.probs.test>0.5] = "Up"
+glm.pred.test  <- as.factor(glm.pred.test)
+confusionMatrix(glm.pred.test, finmarkets.test$usddirection, positive = "Up")
+```
+
+Accuracy Rate is higher than "No Information Rate". But difference is not statistically significant.
+ P-Value [Acc > NIR] : 0.3515.
+So this model above is useless for now.
+```{r}
+
+#Let's try to make the model better by using data from the Istanbul stock market.
+#new predictors: bistretlag1 + bistretlag2 + bistretlag3 + bistretlag4 + bistretlag5.
+
+glm.fit.stock <- glm(usddirection ~ usdretlag1 + usdretlag2 + usdretlag3 + 
+                 usdretlag4 + usdretlag5 + bistretlag1 + bistretlag2 +
+                 bistretlag3 + bistretlag4 + bistretlag5, 
+                 data=finmarkets.train, family=binomial)
+summary(glm.fit.stock)
+
+```
+Results showing that we may have some new useful predictors :). bistretlag1, bistretlag2.And we already have usdretlag2.
+
+```{r}
+#Let's check accuracy rate with training set
+glm.probs.stock <- predict(glm.fit.stock, type = "response") 
+glm.pred.stock  <- rep("Down", nrow(finmarkets.train))
+glm.pred.stock[glm.probs.stock > 0.5] = "Up"
+glm.pred.stock  <- as.factor(glm.pred.stock)
+# both predictions and actual must be factors with the same levels
+confusionMatrix(glm.pred.stock, finmarkets.train$usddirection, positive = "Up")
+```
+#Accuracy Rate is 64%! It is also better than no information rate statistically.
+#P-Value [Acc > NIR] : < 2.2e-16 .
+
+```{r}
+#Now lets observe accuracy rate on test data.
+glm.probs.stock.test <- predict(glm.fit.stock, finmarkets.test, type = "response") 
+glm.pred.stock.test  <- rep("Down", nrow(finmarkets.test))
+glm.pred.stock.test[glm.probs.stock.test>0.5] = "Up"
+glm.pred.stock.test  <- as.factor(glm.pred.stock.test)
+
+confusionMatrix(glm.pred.stock.test, finmarkets.test$usddirection, positive = "Up")
+```
+
+Accuracy Rate 61.1% is statistically significant when we compare it with NIR. We can say that BIST predictors have made our model much more successful.
+
+
+
+
+
+
+
+----------------------------------------------------------------
+
+<div class="tocify-extend-page" data-unique="tocify-extend-page" style="height: 0;"></div>
